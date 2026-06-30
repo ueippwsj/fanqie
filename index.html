@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>顺手番茄钟</title>
+  <style>
+    :root {
+      --bg: #f5f5f7;
+      --card: rgba(255, 255, 255, 0.88);
+      --card-solid: #ffffff;
+      --text: #111111;
+      --muted: #6e6e73;
+      --line: rgba(0, 0, 0, 0.1);
+      --line-strong: rgba(0, 0, 0, 0.18);
+      --shadow: 0 18px 45px rgba(0, 0, 0, 0.08);
+      --shadow-soft: 0 10px 24px rgba(0, 0, 0, 0.06);
+      --radius: 28px;
+      --radius-sm: 18px;
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --nav-height: 78px;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 50% -10%, rgba(255,255,255,0.95) 0, rgba(255,255,255,0.52) 28%, rgba(245,245,247,1) 72%),
+        var(--bg);
+      min-height: 100%;
+      overflow-x: hidden;
+    }
+
+    body.locked .lock-hidden { display: none !important; }
+    body.locked .tab-btn:not([data-tab="timer"]) { opacity: .35; pointer-events: none; }
+    body.fullscreen-active .shell { max-width: 920px; }
+    body.fullscreen-active .topbar,
+    body.fullscreen-active .bottom-nav,
+    body.fullscreen-active .page:not(#timerPage) { display: none !important; }
+    body.fullscreen-active main { padding-bottom: 24px; }
+    body.fullscreen-active .timer-card { min-height: calc(100vh - 48px); justify-content: center; }
+    body.fullscreen-active .time-display { font-size: clamp(78px, 21vw, 188px); }
+
+    .shell {
+      width: min(100%, 860px);
+      margin: 0 auto;
+      padding: 16px 14px calc(var(--nav-height) + var(--safe-bottom) + 18px);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 4px 14px;
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      background: linear-gradient(to bottom, rgba(245,245,247,.95), rgba(245,245,247,.72));
+    }
+
+    .brand { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .brand h1 { margin: 0; font-size: 22px; letter-spacing: -0.04em; line-height: 1.05; }
+    .brand span { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .pill-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+    .card {
+      background: var(--card);
+      border: 1px solid rgba(255,255,255,0.9);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-soft);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+    }
+
+    .page { display: none; animation: rise .18s ease-out both; }
+    .page.active { display: block; }
+    @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .timer-card {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-height: 620px;
+    }
+
+    .timer-head { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; }
+    .stage-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 11px;
+      font-size: 13px;
+      color: var(--muted);
+      width: fit-content;
+      background: rgba(255,255,255,.65);
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #111; box-shadow: 0 0 0 4px rgba(0,0,0,.06); }
+
+    .time-wrap {
+      text-align: center;
+      padding: 28px 0 18px;
+      user-select: none;
+      touch-action: manipulation;
+    }
+
+    .time-display {
+      font-size: clamp(66px, 20vw, 132px);
+      line-height: 0.9;
+      letter-spacing: -0.08em;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      margin: 8px 0;
+    }
+
+    .sub-status { color: var(--muted); font-size: 14px; line-height: 1.45; min-height: 20px; }
+    .progress-track { height: 7px; background: rgba(0,0,0,.08); border-radius: 999px; overflow: hidden; margin: 14px auto 0; width: min(100%, 520px); }
+    .progress-bar { height: 100%; width: 0; background: #111; border-radius: inherit; transition: width .25s linear; }
+
+    .field-grid { display: grid; gap: 10px; }
+    .two { grid-template-columns: 1fr 1fr; }
+    .three { grid-template-columns: repeat(3, 1fr); }
+
+    label.field { display: flex; flex-direction: column; gap: 7px; color: var(--muted); font-size: 12px; }
+    input, select, textarea, button {
+      font: inherit;
+    }
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255,255,255,.78);
+      color: var(--text);
+      padding: 13px 13px;
+      outline: none;
+      transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+    }
+    textarea { min-height: 150px; resize: vertical; line-height: 1.5; }
+    input:focus, select:focus, textarea:focus { border-color: rgba(0,0,0,.38); box-shadow: 0 0 0 4px rgba(0,0,0,.05); background: #fff; }
+    input:disabled, select:disabled, textarea:disabled { opacity: .65; }
+
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,.72);
+      color: #111;
+      padding: 12px 15px;
+      min-height: 44px;
+      cursor: pointer;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      box-shadow: none;
+      transition: transform .12s ease, background .12s ease, border-color .12s ease, opacity .12s ease;
+    }
+    .btn:active { transform: scale(.985); }
+    .btn.primary { background: #111; color: #fff; border-color: #111; }
+    .btn.ghost { background: transparent; box-shadow: none; }
+    .btn.subtle { color: var(--muted); font-weight: 500; }
+    .btn.danger { border-color: rgba(0,0,0,.18); background: #fff; color: #111; }
+    .btn.small { min-height: 36px; padding: 8px 11px; font-size: 13px; }
+    .btn.round { width: 44px; height: 44px; padding: 0; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .control-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 10px; margin-top: 6px; }
+    .secondary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+
+    .mini-card {
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.62);
+      border-radius: 22px;
+      padding: 14px;
+    }
+
+    .section { padding: 18px; margin-bottom: 14px; }
+    .section h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -0.04em; }
+    .section h3 { margin: 0 0 10px; font-size: 15px; letter-spacing: -0.02em; }
+    .section p { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .stat { padding: 16px; border-radius: 24px; background: rgba(255,255,255,.78); border: 1px solid var(--line); }
+    .stat b { display: block; font-size: 32px; line-height: 1; letter-spacing: -0.05em; font-variant-numeric: tabular-nums; }
+    .stat span { color: var(--muted); font-size: 12px; display: block; margin-top: 8px; }
+    .stat.wide { grid-column: 1 / -1; }
+
+    .list { display: flex; flex-direction: column; gap: 10px; }
+    .row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,.72);
+      border-radius: 20px;
+      padding: 12px 13px;
+    }
+    .row-main { min-width: 0; }
+    .row-title { font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-meta { color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.35; }
+
+    .bottom-nav {
+      position: fixed;
+      left: 50%;
+      bottom: max(10px, var(--safe-bottom));
+      transform: translateX(-50%);
+      width: min(calc(100% - 20px), 840px);
+      height: 66px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.86);
+      border: 1px solid rgba(255,255,255,.98);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      padding: 7px;
+      z-index: 20;
+    }
+    .tab-btn {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 999px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .tab-btn strong { font-size: 16px; line-height: 1; font-weight: 700; }
+    .tab-btn.active { background: #111; color: #fff; }
+
+    .switch-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .switch-line + .switch-line { margin-top: 10px; }
+    .switch-text b { display: block; font-size: 14px; }
+    .switch-text span { display: block; color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.35; }
+    .switch { position: relative; width: 52px; height: 32px; flex: 0 0 auto; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; cursor: pointer; inset: 0; background: rgba(0,0,0,.13); border-radius: 999px; transition: .18s; }
+    .slider:before { content: ""; position: absolute; height: 26px; width: 26px; left: 3px; top: 3px; background: #fff; border-radius: 50%; box-shadow: 0 2px 8px rgba(0,0,0,.2); transition: .18s; }
+    .switch input:checked + .slider { background: #111; }
+    .switch input:checked + .slider:before { transform: translateX(20px); }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 60;
+      background: rgba(0,0,0,.28);
+      display: none; align-items: flex-end; justify-content: center;
+      padding: 14px;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      width: min(100%, 520px);
+      background: rgba(255,255,255,.94);
+      border: 1px solid rgba(255,255,255,.9);
+      border-radius: 30px;
+      box-shadow: 0 30px 90px rgba(0,0,0,.22);
+      padding: 18px;
+      animation: sheet .18s ease-out both;
+    }
+    @keyframes sheet { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+    .modal h2 { margin: 0; font-size: 22px; letter-spacing: -0.04em; }
+    .modal p { color: var(--muted); line-height: 1.55; margin: 10px 0 14px; }
+    #modalMessage { white-space: pre-line; }
+    .modal-actions { display: grid; gap: 9px; grid-template-columns: 1fr 1fr; }
+    .modal-actions .wide { grid-column: 1 / -1; }
+
+    .toast {
+      position: fixed; left: 50%; bottom: calc(var(--nav-height) + var(--safe-bottom) + 20px); transform: translateX(-50%) translateY(16px);
+      background: rgba(17,17,17,.9); color: #fff; padding: 11px 14px; border-radius: 999px; font-size: 13px; z-index: 80;
+      opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; max-width: calc(100% - 28px); text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .empty { color: var(--muted); text-align: center; padding: 18px 8px; font-size: 13px; border: 1px dashed var(--line-strong); border-radius: 20px; background: rgba(255,255,255,.42); }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .danger-zone { border-style: dashed; }
+
+    @media (min-width: 700px) {
+      .shell { padding-top: 24px; }
+      .timer-card { padding: 26px; }
+      .field-grid.responsive { grid-template-columns: 1.1fr .9fr; }
+      .modal-backdrop { align-items: center; }
+      .section { padding: 22px; }
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+      .stat.wide { grid-column: auto; }
+    }
+
+    @media (max-width: 430px) {
+      .shell { padding-left: 10px; padding-right: 10px; }
+      .timer-card { padding: 16px; min-height: 570px; }
+      .control-grid { grid-template-columns: 1fr; }
+      .secondary-grid { grid-template-columns: 1fr 1fr; }
+      .two, .three { grid-template-columns: 1fr; }
+      .modal-actions { grid-template-columns: 1fr; }
+      .modal-actions .wide { grid-column: auto; }
+      .brand h1 { font-size: 20px; }
+      .stats-grid { grid-template-columns: 1fr; }
+      .stat.wide { grid-column: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <h1>顺手番茄钟</h1>
+        <span id="topSubtitle">打开就能用，慢慢变顺手。</span>
+      </div>
+      <div class="pill-row">
+        <button class="btn small ghost" id="fullscreenBtn" title="全屏">全屏</button>
+        <button class="btn small" id="lockToggleBtn" title="锁定模式">锁定</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="page active" id="timerPage">
+        <div class="card timer-card">
+          <div class="timer-head">
+            <div>
+              <div class="stage-chip"><span class="dot"></span><span id="stageLabel">专注</span></div>
+              <p class="hint" id="cycleHint">第 1 轮 · 长休息规则加载中</p>
+            </div>
+            <button class="btn small ghost" id="musicToggleBtn">音乐关</button>
+          </div>
+
+          <div class="field-grid responsive lock-hidden">
+            <label class="field">当前任务 / 闹钟名称
+              <input id="taskInput" placeholder="比如：写稿、学习、客户方案，也可以随便写" autocomplete="off" />
+            </label>
+            <label class="field">使用预设
+              <select id="presetSelect"></select>
+            </label>
+          </div>
+
+          <div class="time-wrap" id="timeWrap" title="长按进入全屏">
+            <div class="time-display" id="timeDisplay">25:00</div>
+            <div class="sub-status" id="statusText">准备好了就开始。</div>
+            <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+          </div>
+
+          <div class="mini-card">
+            <div class="control-grid">
+              <button class="btn primary" id="startPauseBtn">开始</button>
+              <button class="btn lock-hidden" id="resetBtn">重置/放弃</button>
+              <button class="btn lock-hidden" id="nextStageBtn">跳到下一阶段</button>
+            </div>
+            <div class="secondary-grid" style="margin-top:10px;">
+              <button class="btn subtle" id="fullscreenBtn2">全屏</button>
+              <button class="btn subtle lock-hidden" id="quickFocusBtn">继续专注</button>
+              <button class="btn subtle" id="exitLockBtn" style="display:none;">退出锁定</button>
+            </div>
+            <p class="hint" style="margin:12px 3px 0;">长按倒计时可进入全屏。锁定模式会收起设置和危险操作。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="todayPage">
+        <div class="card section">
+          <h2>今日统计</h2>
+          <p id="todayDateText">今天</p>
+          <div class="stats-grid" style="margin-top:14px;">
+            <div class="stat"><b id="todayCompleted">0</b><span>完成番茄</span></div>
+            <div class="stat"><b id="todayFocusMin">0</b><span>完成番茄专注分钟</span></div>
+            <div class="stat wide"><b id="todayActualMin">0</b><span>实际专注分钟，包括未完成但已投入的时间</span></div>
+          </div>
+        </div>
+        <div class="card section">
+          <h2>今天的记录</h2>
+          <p>完成的番茄会计入数量；中途放弃会保留实际专注时长，但不算完成。</p>
+          <div class="list" id="todaySessions" style="margin-top:14px;"></div>
+        </div>
+      </section>
+
+      <section class="page" id="historyPage">
+        <div class="card section">
+          <h2>历史统计</h2>
+          <p>历史会一直保留，直到你手动清除统计数据。</p>
+          <div class="list" id="historyList" style="margin-top:14px;"></div>
+        </div>
+      </section>
+
+      <section class="page" id="settingsPage">
+        <div class="card section lock-hidden">
+          <h2>预设管理</h2>
+          <p>默认给学习、写作、深度工作各一个，其他你自己添加和调整。</p>
+          <div class="list" id="presetList" style="margin:14px 0;"></div>
+          <div class="mini-card">
+            <h3>编辑当前预设</h3>
+            <div class="field-grid two">
+              <label class="field">名称<input id="presetNameInput" /></label>
+              <label class="field">几轮后长休息<input id="presetLongEveryInput" type="number" min="1" step="1" /></label>
+            </div>
+            <div class="field-grid three" style="margin-top:10px;">
+              <label class="field">专注分钟<input id="presetFocusInput" type="number" min="1" step="1" /></label>
+              <label class="field">短休分钟<input id="presetShortInput" type="number" min="1" step="1" /></label>
+              <label class="field">长休分钟<input id="presetLongInput" type="number" min="1" step="1" /></label>
+            </div>
+            <div class="pill-row" style="margin-top:12px;">
+              <button class="btn primary" id="savePresetBtn">保存当前预设</button>
+              <button class="btn" id="addPresetBtn">添加为新预设</button>
+              <button class="btn danger" id="deletePresetBtn">删除当前预设</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card section lock-hidden">
+          <h2>流程设置</h2>
+          <div class="switch-line">
+            <div class="switch-text"><b>自动进入下一阶段</b><span>关闭时，每轮结束后由你在弹窗里手动选择。</span></div>
+            <label class="switch"><input type="checkbox" id="autoNextInput"><span class="slider"></span></label>
+          </div>
+          <div class="switch-line">
+            <div class="switch-text"><b>完成后弹窗夸我</b><span>专注结束后显示任务名和随机夸夸文案。</span></div>
+            <label class="switch"><input type="checkbox" id="praiseEnabledInput"><span class="slider"></span></label>
+          </div>
+        </div>
+
+        <div class="card section lock-hidden">
+          <h2>完成后夸我</h2>
+          <p>一行一句。每次完成专注番茄后随机抽一句。</p>
+          <label class="field" style="margin-top:12px;">夸夸文案库
+            <textarea id="praiseTextarea" placeholder="你刚刚真的很稳。\n这轮专注很漂亮，继续保持。\n你没有糊弄自己，这很厉害。"></textarea>
+          </label>
+          <div class="pill-row" style="margin-top:12px;">
+            <button class="btn primary" id="savePraiseBtn">保存夸夸文案</button>
+            <button class="btn" id="resetPraiseBtn">恢复默认文案</button>
+          </div>
+        </div>
+
+        <div class="card section lock-hidden">
+          <h2>声音与背景音乐</h2>
+          <p>提醒音有默认音效，也可以上传自己的。背景音乐由你自己上传和开关。</p>
+          <div class="field-grid two" style="margin-top:12px;">
+            <label class="field">提醒音
+              <select id="reminderSoundSelect">
+                <option value="chime">默认：清脆三声</option>
+                <option value="ding">默认：短提示</option>
+                <option value="soft">默认：柔和提示</option>
+                <option value="custom">使用上传提醒音</option>
+                <option value="off">关闭提醒音</option>
+              </select>
+            </label>
+            <label class="field">提醒音量
+              <input id="reminderVolumeInput" type="range" min="0" max="1" step="0.05" />
+            </label>
+          </div>
+          <div class="field-grid two" style="margin-top:12px;">
+            <label class="field">上传提醒音
+              <input id="reminderFileInput" type="file" accept="audio/*" />
+            </label>
+            <label class="field">上传背景音乐
+              <input id="bgFileInput" type="file" accept="audio/*" />
+            </label>
+          </div>
+          <div class="field-grid two" style="margin-top:12px;">
+            <label class="field">背景音乐音量
+              <input id="bgVolumeInput" type="range" min="0" max="1" step="0.05" />
+            </label>
+            <div class="mini-card">
+              <div class="switch-line">
+                <div class="switch-text"><b>循环播放背景音乐</b><span>不绑定专注或休息，由你自己控制开关。</span></div>
+                <label class="switch"><input type="checkbox" id="bgLoopInput"><span class="slider"></span></label>
+              </div>
+            </div>
+          </div>
+          <p class="hint" id="audioSaveHint">音频会尽量保存到本地；如果文件太大，浏览器可能只允许本次打开期间有效。</p>
+        </div>
+
+        <div class="card section lock-hidden">
+          <h2>任务历史</h2>
+          <p>这里保存你输入过的任务/闹钟名称，方便下次继续用。</p>
+          <div class="list" id="taskHistoryList" style="margin-top:14px;"></div>
+        </div>
+
+        <div class="card section danger-zone lock-hidden">
+          <h2>数据管理</h2>
+          <p>不会误删时间设置、预设、音频设置和夸夸文案。</p>
+          <div class="pill-row" style="margin-top:12px;">
+            <button class="btn danger" id="clearStatsBtn">清除统计数据</button>
+            <button class="btn danger" id="clearTasksBtn">清除任务历史</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <nav class="bottom-nav">
+    <button class="tab-btn active" data-tab="timer"><strong>◷</strong><span>计时</span></button>
+    <button class="tab-btn" data-tab="today"><strong>⌁</strong><span>今日</span></button>
+    <button class="tab-btn" data-tab="history"><strong>≡</strong><span>历史</span></button>
+    <button class="tab-btn" data-tab="settings"><strong>⚙</strong><span>设置</span></button>
+  </nav>
+
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h2 id="modalTitle">完成</h2>
+      <p id="modalMessage">你完成了一个番茄。</p>
+      <div class="modal-actions" id="modalActions"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <audio id="customReminderAudio" preload="auto"></audio>
+  <audio id="bgAudio" preload="auto"></audio>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const STORAGE_KEY = 'shunshou_pomodoro_v1';
+      const DEFAULT_PRAISES = [
+        '你刚刚真的很稳。',
+        '这轮专注很漂亮，继续保持。',
+        '你没有糊弄自己，这很厉害。',
+        '又完成一个番茄，你比刚才更接近目标了。',
+        '做得很好，休息一下也很值得。'
+      ];
+      const DEFAULT_PRESETS = [
+        { id: cryptoId(), name: '学习', focus: 25, short: 5, long: 15, longEvery: 4 },
+        { id: cryptoId(), name: '写作', focus: 50, short: 10, long: 20, longEvery: 4 },
+        { id: cryptoId(), name: '深度工作 / 接单', focus: 90, short: 15, long: 30, longEvery: 4 }
+      ];
+
+      const $ = (id) => document.getElementById(id);
+      const refs = {
+        topSubtitle: $('topSubtitle'),
+        stageLabel: $('stageLabel'),
+        cycleHint: $('cycleHint'),
+        timeDisplay: $('timeDisplay'),
+        statusText: $('statusText'),
+        progressBar: $('progressBar'),
+        taskInput: $('taskInput'),
+        presetSelect: $('presetSelect'),
+        startPauseBtn: $('startPauseBtn'),
+        resetBtn: $('resetBtn'),
+        nextStageBtn: $('nextStageBtn'),
+        quickFocusBtn: $('quickFocusBtn'),
+        fullscreenBtn: $('fullscreenBtn'),
+        fullscreenBtn2: $('fullscreenBtn2'),
+        lockToggleBtn: $('lockToggleBtn'),
+        exitLockBtn: $('exitLockBtn'),
+        musicToggleBtn: $('musicToggleBtn'),
+        timeWrap: $('timeWrap'),
+        todayCompleted: $('todayCompleted'),
+        todayFocusMin: $('todayFocusMin'),
+        todayActualMin: $('todayActualMin'),
+        todayDateText: $('todayDateText'),
+        todaySessions: $('todaySessions'),
+        historyList: $('historyList'),
+        presetList: $('presetList'),
+        presetNameInput: $('presetNameInput'),
+        presetFocusInput: $('presetFocusInput'),
+        presetShortInput: $('presetShortInput'),
+        presetLongInput: $('presetLongInput'),
+        presetLongEveryInput: $('presetLongEveryInput'),
+        savePresetBtn: $('savePresetBtn'),
+        addPresetBtn: $('addPresetBtn'),
+        deletePresetBtn: $('deletePresetBtn'),
+        autoNextInput: $('autoNextInput'),
+        praiseEnabledInput: $('praiseEnabledInput'),
+        praiseTextarea: $('praiseTextarea'),
+        savePraiseBtn: $('savePraiseBtn'),
+        resetPraiseBtn: $('resetPraiseBtn'),
+        reminderSoundSelect: $('reminderSoundSelect'),
+        reminderVolumeInput: $('reminderVolumeInput'),
+        reminderFileInput: $('reminderFileInput'),
+        bgFileInput: $('bgFileInput'),
+        bgVolumeInput: $('bgVolumeInput'),
+        bgLoopInput: $('bgLoopInput'),
+        audioSaveHint: $('audioSaveHint'),
+        taskHistoryList: $('taskHistoryList'),
+        clearStatsBtn: $('clearStatsBtn'),
+        clearTasksBtn: $('clearTasksBtn'),
+        modalBackdrop: $('modalBackdrop'),
+        modalTitle: $('modalTitle'),
+        modalMessage: $('modalMessage'),
+        modalActions: $('modalActions'),
+        toast: $('toast'),
+        customReminderAudio: $('customReminderAudio'),
+        bgAudio: $('bgAudio')
+      };
+
+      let state = loadState();
+      let timer = {
+        stage: 'focus',
+        remaining: getStageSeconds('focus'),
+        total: getStageSeconds('focus'),
+        running: false,
+        lastTick: null,
+        focusActualThisRound: 0,
+        completedInCycle: 0
+      };
+      let intervalId = null;
+      let audioCtx = null;
+      let toastTimer = null;
+      let remindLaterTimer = null;
+      let memoryReminderUrl = '';
+      let memoryBgUrl = '';
+      let longPressTimer = null;
+      let longPressStarted = false;
+      let manualFullscreen = false;
+
+      init();
+
+      function init() {
+        normalizeState();
+        bindEvents();
+        hydrateInputs();
+        setupAudioSources();
+        resetTimerToStage('focus', false);
+        renderAll();
+        setStatus('准备好了就开始。');
+      }
+
+      function cryptoId() {
+        if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+        return 'id_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      }
+
+      function defaultState() {
+        return {
+          presets: structuredCloneSafe(DEFAULT_PRESETS),
+          selectedPresetId: DEFAULT_PRESETS[0].id,
+          settings: {
+            autoNext: false,
+            praiseEnabled: true,
+            praises: DEFAULT_PRAISES.join('\n'),
+            reminderSound: 'chime',
+            reminderVolume: 0.75,
+            customReminderData: '',
+            bgVolume: 0.45,
+            bgLoop: true,
+            customBgData: ''
+          },
+          currentTask: '',
+          taskHistory: [],
+          stats: {}
+        };
+      }
+
+      function structuredCloneSafe(value) {
+        try { return structuredClone(value); }
+        catch (_) { return JSON.parse(JSON.stringify(value)); }
+      }
+
+      function loadState() {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (!saved) return defaultState();
+          return Object.assign(defaultState(), JSON.parse(saved));
+        } catch (_) {
+          return defaultState();
+        }
+      }
+
+      function normalizeState() {
+        const defaults = defaultState();
+        if (!Array.isArray(state.presets) || !state.presets.length) state.presets = defaults.presets;
+        state.presets = state.presets.map(p => ({
+          id: p.id || cryptoId(),
+          name: String(p.name || '未命名预设'),
+          focus: clampNumber(p.focus, 1, 999, 25),
+          short: clampNumber(p.short, 1, 999, 5),
+          long: clampNumber(p.long, 1, 999, 15),
+          longEvery: clampNumber(p.longEvery, 1, 99, 4)
+        }));
+        if (!state.presets.some(p => p.id === state.selectedPresetId)) state.selectedPresetId = state.presets[0].id;
+        state.settings = Object.assign(defaults.settings, state.settings || {});
+        if (!state.settings.praises) state.settings.praises = DEFAULT_PRAISES.join('\n');
+        if (!state.stats || typeof state.stats !== 'object') state.stats = {};
+        if (!Array.isArray(state.taskHistory)) state.taskHistory = [];
+        state.currentTask = String(state.currentTask || '');
+        saveState();
+      }
+
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+          return true;
+        } catch (err) {
+          console.warn('保存失败，可能是音频文件太大：', err);
+          return false;
+        }
+      }
+
+      function clampNumber(value, min, max, fallback) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return fallback;
+        return Math.min(max, Math.max(min, Math.round(num)));
+      }
+
+      function selectedPreset() {
+        return state.presets.find(p => p.id === state.selectedPresetId) || state.presets[0];
+      }
+
+      function getStageSeconds(stage) {
+        const p = selectedPreset();
+        if (stage === 'short') return p.short * 60;
+        if (stage === 'long') return p.long * 60;
+        return p.focus * 60;
+      }
+
+      function bindEvents() {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+          btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+        });
+
+        refs.startPauseBtn.addEventListener('click', toggleStartPause);
+        refs.resetBtn.addEventListener('click', resetOrAbandon);
+        refs.nextStageBtn.addEventListener('click', () => {
+          if (confirm('要跳到下一阶段吗？专注阶段已投入的时间会被记录，但不算完成番茄。')) {
+            recordPartialIfNeeded('跳过');
+            startNextStageManual();
+          }
+        });
+        refs.quickFocusBtn.addEventListener('click', () => beginFocus(true));
+        refs.fullscreenBtn.addEventListener('click', toggleFullscreen);
+        refs.fullscreenBtn2.addEventListener('click', toggleFullscreen);
+        refs.lockToggleBtn.addEventListener('click', toggleLock);
+        refs.exitLockBtn.addEventListener('click', () => setLocked(false));
+        refs.musicToggleBtn.addEventListener('click', toggleBackgroundMusic);
+
+        refs.taskInput.addEventListener('input', () => {
+          state.currentTask = refs.taskInput.value;
+          saveState();
+          renderTimerMeta();
+        });
+        refs.taskInput.addEventListener('change', saveTaskToHistory);
+
+        refs.presetSelect.addEventListener('change', () => {
+          const wasRunning = timer.running;
+          if (wasRunning && !confirm('切换预设会重置当前计时，确定吗？')) {
+            refs.presetSelect.value = state.selectedPresetId;
+            return;
+          }
+          recordPartialIfNeeded('切换预设');
+          state.selectedPresetId = refs.presetSelect.value;
+          saveState();
+          hydratePresetEditor();
+          resetTimerToStage('focus', false);
+          renderAll();
+        });
+
+        refs.savePresetBtn.addEventListener('click', saveCurrentPreset);
+        refs.addPresetBtn.addEventListener('click', addPresetFromEditor);
+        refs.deletePresetBtn.addEventListener('click', deleteCurrentPreset);
+
+        refs.autoNextInput.addEventListener('change', () => {
+          state.settings.autoNext = refs.autoNextInput.checked;
+          saveState();
+          renderTimerMeta();
+        });
+        refs.praiseEnabledInput.addEventListener('change', () => {
+          state.settings.praiseEnabled = refs.praiseEnabledInput.checked;
+          saveState();
+        });
+        refs.savePraiseBtn.addEventListener('click', () => {
+          state.settings.praises = refs.praiseTextarea.value.trim() || DEFAULT_PRAISES.join('\n');
+          saveState();
+          refs.praiseTextarea.value = state.settings.praises;
+          toast('夸夸文案已保存。');
+        });
+        refs.resetPraiseBtn.addEventListener('click', () => {
+          state.settings.praises = DEFAULT_PRAISES.join('\n');
+          refs.praiseTextarea.value = state.settings.praises;
+          saveState();
+          toast('已恢复默认夸夸文案。');
+        });
+
+        refs.reminderSoundSelect.addEventListener('change', () => {
+          state.settings.reminderSound = refs.reminderSoundSelect.value;
+          saveState();
+        });
+        refs.reminderVolumeInput.addEventListener('input', () => {
+          state.settings.reminderVolume = Number(refs.reminderVolumeInput.value);
+          refs.customReminderAudio.volume = state.settings.reminderVolume;
+          saveState();
+        });
+        refs.bgVolumeInput.addEventListener('input', () => {
+          state.settings.bgVolume = Number(refs.bgVolumeInput.value);
+          refs.bgAudio.volume = state.settings.bgVolume;
+          saveState();
+        });
+        refs.bgLoopInput.addEventListener('change', () => {
+          state.settings.bgLoop = refs.bgLoopInput.checked;
+          refs.bgAudio.loop = state.settings.bgLoop;
+          saveState();
+        });
+        refs.reminderFileInput.addEventListener('change', (e) => handleAudioUpload(e, 'reminder'));
+        refs.bgFileInput.addEventListener('change', (e) => handleAudioUpload(e, 'bg'));
+
+        refs.clearStatsBtn.addEventListener('click', () => {
+          if (confirm('确定清除全部统计数据吗？预设、设置和夸夸文案会保留。')) {
+            state.stats = {};
+            saveState();
+            renderStats();
+            toast('统计数据已清除。');
+          }
+        });
+        refs.clearTasksBtn.addEventListener('click', () => {
+          if (confirm('确定清除任务历史吗？统计数据会保留。')) {
+            state.taskHistory = [];
+            saveState();
+            renderTaskHistory();
+            toast('任务历史已清除。');
+          }
+        });
+
+        refs.modalBackdrop.addEventListener('click', (e) => {
+          if (e.target === refs.modalBackdrop) closeModal();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+          if (!document.hidden && timer.running) tick(true);
+        });
+        document.addEventListener('fullscreenchange', renderFullscreenState);
+
+        refs.timeWrap.addEventListener('touchstart', startLongPress, { passive: true });
+        refs.timeWrap.addEventListener('touchend', cancelLongPress);
+        refs.timeWrap.addEventListener('touchcancel', cancelLongPress);
+        refs.timeWrap.addEventListener('mousedown', startLongPress);
+        refs.timeWrap.addEventListener('mouseup', cancelLongPress);
+        refs.timeWrap.addEventListener('mouseleave', cancelLongPress);
+      }
+
+      function hydrateInputs() {
+        refs.taskInput.value = state.currentTask;
+        refs.autoNextInput.checked = !!state.settings.autoNext;
+        refs.praiseEnabledInput.checked = !!state.settings.praiseEnabled;
+        refs.praiseTextarea.value = state.settings.praises || DEFAULT_PRAISES.join('\n');
+        refs.reminderSoundSelect.value = state.settings.reminderSound || 'chime';
+        refs.reminderVolumeInput.value = state.settings.reminderVolume;
+        refs.bgVolumeInput.value = state.settings.bgVolume;
+        refs.bgLoopInput.checked = !!state.settings.bgLoop;
+        hydratePresetSelect();
+        hydratePresetEditor();
+      }
+
+      function hydratePresetSelect() {
+        refs.presetSelect.innerHTML = '';
+        state.presets.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = `${p.name} · ${p.focus}/${p.short}/${p.long}`;
+          refs.presetSelect.appendChild(opt);
+        });
+        refs.presetSelect.value = state.selectedPresetId;
+      }
+
+      function hydratePresetEditor() {
+        const p = selectedPreset();
+        refs.presetNameInput.value = p.name;
+        refs.presetFocusInput.value = p.focus;
+        refs.presetShortInput.value = p.short;
+        refs.presetLongInput.value = p.long;
+        refs.presetLongEveryInput.value = p.longEvery;
+      }
+
+      function readPresetEditor() {
+        return {
+          name: refs.presetNameInput.value.trim() || '未命名预设',
+          focus: clampNumber(refs.presetFocusInput.value, 1, 999, 25),
+          short: clampNumber(refs.presetShortInput.value, 1, 999, 5),
+          long: clampNumber(refs.presetLongInput.value, 1, 999, 15),
+          longEvery: clampNumber(refs.presetLongEveryInput.value, 1, 99, 4)
+        };
+      }
+
+      function saveCurrentPreset() {
+        const values = readPresetEditor();
+        const p = selectedPreset();
+        Object.assign(p, values);
+        saveState();
+        hydratePresetSelect();
+        resetTimerToStage(timer.stage, false);
+        renderAll();
+        toast('当前预设已保存。');
+      }
+
+      function addPresetFromEditor() {
+        const values = readPresetEditor();
+        const newPreset = Object.assign({ id: cryptoId() }, values);
+        state.presets.push(newPreset);
+        state.selectedPresetId = newPreset.id;
+        saveState();
+        hydratePresetSelect();
+        hydratePresetEditor();
+        resetTimerToStage('focus', false);
+        renderAll();
+        toast('新预设已添加。');
+      }
+
+      function deleteCurrentPreset() {
+        if (state.presets.length <= 1) {
+          toast('至少保留一个预设。');
+          return;
+        }
+        const p = selectedPreset();
+        if (!confirm(`确定删除「${p.name}」吗？`)) return;
+        state.presets = state.presets.filter(item => item.id !== p.id);
+        state.selectedPresetId = state.presets[0].id;
+        saveState();
+        hydratePresetSelect();
+        hydratePresetEditor();
+        resetTimerToStage('focus', false);
+        renderAll();
+        toast('预设已删除。');
+      }
+
+      function setupAudioSources() {
+        refs.customReminderAudio.volume = state.settings.reminderVolume;
+        refs.bgAudio.volume = state.settings.bgVolume;
+        refs.bgAudio.loop = !!state.settings.bgLoop;
+        if (state.settings.customReminderData) refs.customReminderAudio.src = state.settings.customReminderData;
+        if (state.settings.customBgData) refs.bgAudio.src = state.settings.customBgData;
+      }
+
+      function ensureAudioContext() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+      }
+
+      function playReminder() {
+        if (state.settings.reminderSound === 'off') return;
+        ensureAudioContext();
+        const vol = clampVolume(state.settings.reminderVolume);
+        if (state.settings.reminderSound === 'custom') {
+          const src = memoryReminderUrl || state.settings.customReminderData;
+          if (!src) { toast('还没有上传提醒音，先用默认提示。'); playTonePattern('chime', vol); return; }
+          refs.customReminderAudio.src = src;
+          refs.customReminderAudio.volume = vol;
+          refs.customReminderAudio.currentTime = 0;
+          refs.customReminderAudio.play().catch(() => toast('浏览器阻止了声音播放，请点一次开始或上传音频后再试。'));
+          return;
+        }
+        playTonePattern(state.settings.reminderSound, vol);
+      }
+
+      function clampVolume(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return .7;
+        return Math.min(1, Math.max(0, n));
+      }
+
+      function playTonePattern(type, volume) {
+        if (!audioCtx) return;
+        const now = audioCtx.currentTime;
+        const patterns = {
+          ding: [{ f: 880, t: 0, d: .16 }],
+          soft: [{ f: 523, t: 0, d: .18 }, { f: 659, t: .2, d: .22 }],
+          chime: [{ f: 740, t: 0, d: .13 }, { f: 988, t: .17, d: .13 }, { f: 1175, t: .34, d: .2 }]
+        };
+        (patterns[type] || patterns.chime).forEach(note => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(note.f, now + note.t);
+          gain.gain.setValueAtTime(0, now + note.t);
+          gain.gain.linearRampToValueAtTime(volume * .18, now + note.t + .015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + note.t + note.d);
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now + note.t);
+          osc.stop(now + note.t + note.d + .03);
+        });
+      }
+
+      function handleAudioUpload(event, type) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = String(reader.result || '');
+          if (type === 'reminder') {
+            const prev = state.settings.customReminderData;
+            state.settings.customReminderData = dataUrl;
+            if (saveState()) {
+              refs.customReminderAudio.src = dataUrl;
+              refs.audioSaveHint.textContent = '提醒音已保存到本地。';
+              toast('提醒音已保存。');
+            } else {
+              state.settings.customReminderData = prev;
+              saveState();
+              memoryReminderUrl = URL.createObjectURL(file);
+              refs.customReminderAudio.src = memoryReminderUrl;
+              refs.audioSaveHint.textContent = '提醒音文件较大，已设为本次打开期间有效。';
+              toast('文件较大，本次打开期间有效。');
+            }
+            state.settings.reminderSound = 'custom';
+            refs.reminderSoundSelect.value = 'custom';
+            saveState();
+          } else {
+            const prev = state.settings.customBgData;
+            state.settings.customBgData = dataUrl;
+            if (saveState()) {
+              refs.bgAudio.src = dataUrl;
+              refs.audioSaveHint.textContent = '背景音乐已保存到本地。';
+              toast('背景音乐已保存。');
+            } else {
+              state.settings.customBgData = prev;
+              saveState();
+              memoryBgUrl = URL.createObjectURL(file);
+              refs.bgAudio.src = memoryBgUrl;
+              refs.audioSaveHint.textContent = '背景音乐文件较大，已设为本次打开期间有效。';
+              toast('文件较大，本次打开期间有效。');
+            }
+          }
+        };
+        reader.onerror = () => toast('音频读取失败，请换一个文件试试。');
+        reader.readAsDataURL(file);
+      }
+
+      function toggleBackgroundMusic() {
+        ensureAudioContext();
+        const src = memoryBgUrl || state.settings.customBgData;
+        if (!src) {
+          toast('先在设置里上传背景音乐。');
+          switchTab('settings');
+          return;
+        }
+        refs.bgAudio.src = src;
+        refs.bgAudio.volume = clampVolume(state.settings.bgVolume);
+        refs.bgAudio.loop = !!state.settings.bgLoop;
+        if (refs.bgAudio.paused) {
+          refs.bgAudio.play().then(() => renderMusicButton()).catch(() => toast('浏览器阻止了音乐播放，请再点一次。'));
+        } else {
+          refs.bgAudio.pause();
+          renderMusicButton();
+        }
+      }
+
+      function renderMusicButton() {
+        refs.musicToggleBtn.textContent = refs.bgAudio.paused ? '音乐关' : '音乐开';
+      }
+
+      function toggleStartPause() {
+        ensureAudioContext();
+        if (timer.running) pauseTimer();
+        else startTimer();
+      }
+
+      function startTimer() {
+        if (timer.remaining <= 0) resetTimerToStage(timer.stage, false);
+        timer.running = true;
+        timer.lastTick = Date.now();
+        saveTaskToHistory();
+        clearInterval(intervalId);
+        intervalId = setInterval(() => tick(false), 250);
+        setStatus(stageActionText());
+        renderControls();
+      }
+
+      function pauseTimer() {
+        tick(true);
+        timer.running = false;
+        timer.lastTick = null;
+        clearInterval(intervalId);
+        setStatus('已暂停。实际专注时长不会在暂停时增加。');
+        renderControls();
+      }
+
+      function tick(force) {
+        if (!timer.running && !force) return;
+        const now = Date.now();
+        if (!timer.lastTick) timer.lastTick = now;
+        const elapsed = Math.floor((now - timer.lastTick) / 1000);
+        if (elapsed <= 0 && !force) return;
+        if (elapsed > 0) {
+          timer.lastTick += elapsed * 1000;
+          for (let i = 0; i < elapsed; i++) {
+            if (timer.remaining > 0) {
+              timer.remaining -= 1;
+              if (timer.stage === 'focus') timer.focusActualThisRound += 1;
+            }
+          }
+        }
+        if (timer.remaining <= 0) {
+          timer.remaining = 0;
+          renderTimer();
+          handleStageComplete();
+          return;
+        }
+        renderTimer();
+      }
+
+      function handleStageComplete() {
+        clearInterval(intervalId);
+        timer.running = false;
+        timer.lastTick = null;
+        if (timer.stage === 'focus') {
+          timer.completedInCycle += 1;
+          recordFocusSession(true, '完成');
+          playReminder();
+          const task = currentTaskName();
+          const next = nextRestStage();
+          const praise = state.settings.praiseEnabled ? randomPraise() : '';
+          const message = `${task} 已完成一个专注周期。${praise ? '\n\n' + praise : ''}${state.settings.autoNext ? '\n\n已开启自动进入下一阶段，我会帮你进入休息。' : ''}`;
+          showFocusCompleteModal(message, next);
+          if (state.settings.autoNext) {
+            setTimeout(() => {
+              if (refs.modalBackdrop.classList.contains('show')) beginRest(next, true);
+            }, 1200);
+          }
+        } else {
+          playReminder();
+          const message = `${stageName(timer.stage)}结束了。准备好就回来继续专注。${state.settings.autoNext ? '\n\n已开启自动进入下一阶段，我会帮你开始专注。' : ''}`;
+          showRestCompleteModal(message);
+          if (state.settings.autoNext) {
+            setTimeout(() => {
+              if (refs.modalBackdrop.classList.contains('show')) beginFocus(true);
+            }, 1200);
+          }
+        }
+        renderAll();
+      }
+
+      function showFocusCompleteModal(message, restStage) {
+        showModal('完成一个番茄', message, [
+          { text: `开始${stageName(restStage)}`, primary: true, action: () => beginRest(restStage, true) },
+          { text: '跳过休息', action: () => beginFocus(true) },
+          { text: '继续一个专注', action: () => beginFocus(true) },
+          { text: '稍后提醒', action: remindLater },
+          { text: '关闭', action: closeModal, wide: true }
+        ]);
+      }
+
+      function showRestCompleteModal(message) {
+        showModal('休息结束', message, [
+          { text: '开始专注', primary: true, action: () => beginFocus(true) },
+          { text: '稍后提醒', action: remindLater },
+          { text: '关闭', action: closeModal, wide: true }
+        ]);
+      }
+
+      function remindLater() {
+        closeModal();
+        clearTimeout(remindLaterTimer);
+        remindLaterTimer = setTimeout(() => {
+          playReminder();
+          showModal('回来啦', '刚才选择了稍后提醒。现在可以继续安排下一步了。', [
+            { text: '开始专注', primary: true, action: () => beginFocus(true) },
+            { text: '关闭', action: closeModal }
+          ]);
+        }, 3 * 60 * 1000);
+        toast('3 分钟后再提醒你。');
+      }
+
+      function beginRest(stage, shouldStart) {
+        closeModal();
+        resetTimerToStage(stage, shouldStart);
+        setStatus(shouldStart ? `${stageName(stage)}开始。` : `准备开始${stageName(stage)}。`);
+      }
+
+      function beginFocus(shouldStart) {
+        closeModal();
+        resetTimerToStage('focus', shouldStart);
+        setStatus(shouldStart ? '新的专注开始。' : '准备开始专注。');
+      }
+
+      function startNextStageManual() {
+        if (timer.stage === 'focus') beginRest(nextRestStage(), false);
+        else beginFocus(false);
+      }
+
+      function nextRestStage() {
+        const p = selectedPreset();
+        return timer.completedInCycle > 0 && timer.completedInCycle % p.longEvery === 0 ? 'long' : 'short';
+      }
+
+      function resetTimerToStage(stage, shouldStart) {
+        clearInterval(intervalId);
+        timer.stage = stage;
+        timer.remaining = getStageSeconds(stage);
+        timer.total = timer.remaining;
+        timer.running = false;
+        timer.lastTick = null;
+        if (stage === 'focus') timer.focusActualThisRound = 0;
+        renderAll();
+        if (shouldStart) startTimer();
+      }
+
+      function resetOrAbandon() {
+        const hasProgress = timer.stage === 'focus' && timer.focusActualThisRound > 0;
+        const message = hasProgress
+          ? '要放弃并重置本轮吗？已专注的实际分钟会被记录，但不算完成番茄。'
+          : '要重置当前计时吗？';
+        if (!confirm(message)) return;
+        recordPartialIfNeeded('放弃');
+        resetTimerToStage(timer.stage, false);
+        setStatus('已重置。');
+      }
+
+      function recordPartialIfNeeded(reason) {
+        if (timer.stage === 'focus' && timer.focusActualThisRound > 0) {
+          recordFocusSession(false, reason || '未完成');
+        }
+      }
+
+      function recordFocusSession(completed, reason) {
+        const seconds = timer.focusActualThisRound;
+        if (seconds <= 0 && !completed) return;
+        const dateKey = todayKey();
+        const day = ensureDay(dateKey);
+        day.focusSeconds += Math.max(0, seconds);
+        if (completed) {
+          day.completed += 1;
+          day.completedFocusSeconds += Math.max(0, seconds);
+        }
+        day.sessions.unshift({
+          at: new Date().toISOString(),
+          task: currentTaskName(),
+          preset: selectedPreset().name,
+          seconds: Math.max(0, seconds),
+          completed: !!completed,
+          reason: reason || (completed ? '完成' : '未完成')
+        });
+        timer.focusActualThisRound = 0;
+        saveTaskToHistory();
+        saveState();
+        renderStats();
+      }
+
+      function ensureDay(key) {
+        if (!state.stats[key]) state.stats[key] = { completed: 0, focusSeconds: 0, sessions: [] };
+        if (!Array.isArray(state.stats[key].sessions)) state.stats[key].sessions = [];
+        state.stats[key].completed = Number(state.stats[key].completed || 0);
+        state.stats[key].focusSeconds = Number(state.stats[key].focusSeconds || 0);
+        return state.stats[key];
+      }
+
+      function todayKey() {
+        const d = new Date();
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+
+      function currentTaskName() {
+        const value = (state.currentTask || refs.taskInput.value || '').trim();
+        return value || '这件事';
+      }
+
+      function saveTaskToHistory() {
+        const task = (refs.taskInput.value || '').trim();
+        if (!task) return;
+        state.currentTask = task;
+        state.taskHistory = [task, ...state.taskHistory.filter(t => t !== task)].slice(0, 30);
+        saveState();
+        renderTaskHistory();
+      }
+
+      function randomPraise() {
+        const lines = String(state.settings.praises || '')
+          .split('\n')
+          .map(s => s.trim())
+          .filter(Boolean);
+        const pool = lines.length ? lines : DEFAULT_PRAISES;
+        return pool[Math.floor(Math.random() * pool.length)];
+      }
+
+      function switchTab(tab) {
+        if (document.body.classList.contains('locked') && tab !== 'timer') return;
+        const pageMap = { timer: 'timerPage', today: 'todayPage', history: 'historyPage', settings: 'settingsPage' };
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        $(pageMap[tab]).classList.add('active');
+        if (tab === 'today' || tab === 'history') renderStats();
+      }
+
+      function renderAll() {
+        renderTimer();
+        renderControls();
+        renderTimerMeta();
+        renderPresets();
+        renderStats();
+        renderTaskHistory();
+        renderMusicButton();
+        renderLockState();
+        renderFullscreenState();
+      }
+
+      function renderTimer() {
+        refs.timeDisplay.textContent = formatSeconds(timer.remaining);
+        const elapsed = Math.max(0, timer.total - timer.remaining);
+        const pct = timer.total ? (elapsed / timer.total) * 100 : 0;
+        refs.progressBar.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+        document.title = `${formatSeconds(timer.remaining)} · ${stageName(timer.stage)}`;
+      }
+
+      function renderControls() {
+        refs.startPauseBtn.textContent = timer.running ? '暂停' : '开始';
+        refs.startPauseBtn.classList.toggle('primary', !timer.running);
+      }
+
+      function renderTimerMeta() {
+        const p = selectedPreset();
+        refs.stageLabel.textContent = stageName(timer.stage);
+        const nextLong = p.longEvery - (timer.completedInCycle % p.longEvery);
+        refs.cycleHint.textContent = `第 ${timer.completedInCycle + 1} 轮 · 每 ${p.longEvery} 轮长休息 · 距长休息还差 ${nextLong} 轮`;
+        refs.topSubtitle.textContent = `${currentTaskName()} · ${p.name} · ${p.focus}/${p.short}/${p.long}`;
+      }
+
+      function renderPresets() {
+        hydratePresetSelect();
+        const selectedId = state.selectedPresetId;
+        refs.presetList.innerHTML = '';
+        state.presets.forEach(p => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.innerHTML = `
+            <div class="row-main">
+              <div class="row-title">${escapeHtml(p.name)}${p.id === selectedId ? ' · 当前' : ''}</div>
+              <div class="row-meta">专注 ${p.focus} 分 · 短休 ${p.short} 分 · 长休 ${p.long} 分 · 每 ${p.longEvery} 轮长休</div>
+            </div>
+            <button class="btn small ${p.id === selectedId ? 'primary' : ''}" data-preset-id="${p.id}">${p.id === selectedId ? '使用中' : '使用'}</button>
+          `;
+          row.querySelector('button').addEventListener('click', () => {
+            if (timer.running && !confirm('切换预设会重置当前计时，确定吗？')) return;
+            recordPartialIfNeeded('切换预设');
+            state.selectedPresetId = p.id;
+            saveState();
+            hydratePresetEditor();
+            resetTimerToStage('focus', false);
+            renderAll();
+          });
+          refs.presetList.appendChild(row);
+        });
+      }
+
+      function renderStats() {
+        const key = todayKey();
+        const day = ensureDay(key);
+        refs.todayDateText.textContent = new Date().toLocaleDateString('zh-CN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        refs.todayCompleted.textContent = day.completed;
+        refs.todayFocusMin.textContent = Math.round(day.completedFocusSeconds / 60);
+        refs.todayActualMin.textContent = Math.round(day.focusSeconds / 60);
+        renderSessions(day.sessions || []);
+        renderHistory();
+      }
+
+      function renderSessions(sessions) {
+        refs.todaySessions.innerHTML = '';
+        if (!sessions.length) {
+          refs.todaySessions.innerHTML = '<div class="empty">今天还没有记录。完成一轮，或者中途放弃后，我会把实际专注时间记下来。</div>';
+          return;
+        }
+        sessions.slice(0, 20).forEach(s => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          const time = new Date(s.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+          row.innerHTML = `
+            <div class="row-main">
+              <div class="row-title">${escapeHtml(s.task || '这件事')}</div>
+              <div class="row-meta">${time} · ${escapeHtml(s.preset || '')} · ${Math.round((s.seconds || 0) / 60)} 分钟 · ${s.completed ? '完成番茄' : escapeHtml(s.reason || '未完成')}</div>
+            </div>
+            <span class="stage-chip">${s.completed ? '完成' : '记录'}</span>
+          `;
+          refs.todaySessions.appendChild(row);
+        });
+      }
+
+      function renderHistory() {
+        refs.historyList.innerHTML = '';
+        const entries = Object.entries(state.stats || {})
+          .filter(([, d]) => d && ((d.completed || 0) > 0 || (d.focusSeconds || 0) > 0))
+          .sort((a, b) => b[0].localeCompare(a[0]));
+        if (!entries.length) {
+          refs.historyList.innerHTML = '<div class="empty">还没有历史统计。</div>';
+          return;
+        }
+        entries.forEach(([date, d]) => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.innerHTML = `
+            <div class="row-main">
+              <div class="row-title">${date}</div>
+              <div class="row-meta">完成 ${d.completed || 0} 个番茄 · 实际专注 ${Math.round((d.focusSeconds || 0) / 60)} 分钟 · 记录 ${(d.sessions || []).length} 条</div>
+            </div>
+          `;
+          refs.historyList.appendChild(row);
+        });
+      }
+
+      function renderTaskHistory() {
+        refs.taskHistoryList.innerHTML = '';
+        if (!state.taskHistory.length) {
+          refs.taskHistoryList.innerHTML = '<div class="empty">还没有任务历史。你在计时页输入后会自动保存。</div>';
+          return;
+        }
+        state.taskHistory.forEach(task => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          row.innerHTML = `
+            <div class="row-main"><div class="row-title">${escapeHtml(task)}</div><div class="row-meta">点一下可填入当前任务</div></div>
+            <button class="btn small">使用</button>
+          `;
+          row.querySelector('button').addEventListener('click', () => {
+            refs.taskInput.value = task;
+            state.currentTask = task;
+            saveState();
+            renderTimerMeta();
+            switchTab('timer');
+          });
+          refs.taskHistoryList.appendChild(row);
+        });
+      }
+
+      function setStatus(text) {
+        refs.statusText.textContent = text;
+      }
+
+      function stageActionText() {
+        if (timer.stage === 'focus') return '正在专注。暂停不会计入实际专注时长。';
+        return `正在${stageName(timer.stage)}。`;
+      }
+
+      function stageName(stage) {
+        if (stage === 'short') return '短休息';
+        if (stage === 'long') return '长休息';
+        return '专注';
+      }
+
+      function formatSeconds(seconds) {
+        const s = Math.max(0, Math.round(seconds));
+        const m = Math.floor(s / 60);
+        const rest = s % 60;
+        return `${String(m).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
+      }
+
+      function showModal(title, message, actions) {
+        refs.modalTitle.textContent = title;
+        refs.modalMessage.textContent = message;
+        refs.modalActions.innerHTML = '';
+        actions.forEach(item => {
+          const btn = document.createElement('button');
+          btn.className = `btn ${item.primary ? 'primary' : ''} ${item.wide ? 'wide' : ''}`;
+          btn.textContent = item.text;
+          btn.addEventListener('click', item.action);
+          refs.modalActions.appendChild(btn);
+        });
+        refs.modalBackdrop.classList.add('show');
+      }
+
+      function closeModal() {
+        refs.modalBackdrop.classList.remove('show');
+      }
+
+      function toast(message) {
+        refs.toast.textContent = message;
+        refs.toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => refs.toast.classList.remove('show'), 2200);
+      }
+
+      function toggleLock() {
+        setLocked(!document.body.classList.contains('locked'));
+      }
+
+      function setLocked(locked) {
+        document.body.classList.toggle('locked', locked);
+        renderLockState();
+        if (locked) switchTab('timer');
+      }
+
+      function renderLockState() {
+        const locked = document.body.classList.contains('locked');
+        refs.lockToggleBtn.textContent = locked ? '已锁定' : '锁定';
+        refs.exitLockBtn.style.display = locked ? 'inline-flex' : 'none';
+        refs.taskInput.disabled = locked;
+        refs.presetSelect.disabled = locked;
+      }
+
+      function toggleFullscreen() {
+        const root = document.documentElement;
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+          return;
+        }
+        if (manualFullscreen) {
+          manualFullscreen = false;
+          renderFullscreenState();
+          return;
+        }
+        switchTab('timer');
+        if (root.requestFullscreen) {
+          root.requestFullscreen().catch(() => {
+            manualFullscreen = true;
+            renderFullscreenState();
+            toast('已进入页面内全屏模式。');
+          });
+        } else {
+          manualFullscreen = true;
+          renderFullscreenState();
+          toast('已进入页面内全屏模式。');
+        }
+      }
+
+      function renderFullscreenState() {
+        const active = !!document.fullscreenElement || manualFullscreen;
+        document.body.classList.toggle('fullscreen-active', active);
+        refs.fullscreenBtn.textContent = active ? '退出全屏' : '全屏';
+        refs.fullscreenBtn2.textContent = active ? '退出全屏' : '全屏';
+      }
+
+      function startLongPress() {
+        longPressStarted = true;
+        clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+          if (longPressStarted) toggleFullscreen();
+        }, 650);
+      }
+
+      function cancelLongPress() {
+        longPressStarted = false;
+        clearTimeout(longPressTimer);
+      }
+
+      function escapeHtml(text) {
+        return String(text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+    })();
+  </script>
+</body>
+</html>
